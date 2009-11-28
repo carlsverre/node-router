@@ -4,7 +4,7 @@ var NOT_FOUND = "Not Found\n";
 var routes = [];
 
 function notFound(req, res, message) {
-  debug("notFound!");
+  sys.debug("notFound!");
   message = message || NOT_FOUND;
   res.sendHeader(404, [ ["Content-Type", "text/plain"],
                         ["Content-Length", message.length]
@@ -64,35 +64,31 @@ exports.resourceController = function (name, data, on_change) {
 				res.notFound();
 			}
 		},
-		create: function (req, res) {
-			req.jsonBody(function (json) {
-				var item, id, url;
-				item = json && json.content;
-				if (!item) {
-					res.notFound();
-				} else {
-					data.push(item);
-					id = data.length - 1;
-					on_change(id);
-					url = "/" + name + "/" + id;
-					res.simpleJson(201, {content: item, self: url}, [["Location", url]]);
-				}
-			});
+    create: function (req, res) {
+      var json = arguments[2];
+      var id, url;
+      if (!json) {
+        res.notFound();
+      } else {
+        data.push(json);
+        id = data.length - 1;
+        on_change(id);
+        url = "/" + name + "/" + id;
+        res.simpleJson(201, {content: json, self: url}, [["Location", url]]);
+      }
 		},
-		update: function (req, res, id) {
-			req.jsonBody(function (json) {
-				var item = json && json.content;
-				if (!item) {
-					res.notFound();
-				} else {
-					data[id] = item;
-					on_change(id);
-					res.simpleJson(200, {content: item, self: "/" + name + "/" + id});
-				}
-			});
+    update: function (req, res, id) {
+      var json = arguments[3];
+      if (!json) {
+        res.notFound();
+      } else {
+        data[id] = json;
+        on_change(id);
+        res.simpleJson(200, {content: json, self: "/" + name + "/" + id});
+      }
 		},
 		destroy: function (req, res, id) {
-			delete(data[id]);
+      delete(data[id]);
 			on_change(id);
 			res.simpleJson(200, "200 Destroyed");
 		}

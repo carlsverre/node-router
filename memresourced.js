@@ -1,4 +1,5 @@
-var server = require('./http_server')
+var server = require('./node-router'),
+    sys    = require('sys');
 
 var people = [
 	{ name: "Bob", age: 47, programmer: false },
@@ -7,8 +8,11 @@ var people = [
 ];
 
 function on_change(id) {
-	process.debug(id, JSON.stringify(people[id]));
+  if(people[id])
+    sys.debug("Person " + id + " added:\n" + JSON.stringify(people[id]));
+  else
+    sys.debug("Person " + id + " removed.");
 }
 
-server.resource("people", server.resourceController("people", people), on_change);
+server.resource("people", server.resourceController("people", people, on_change), 'json');
 server.listen(8080);
