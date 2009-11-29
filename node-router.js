@@ -2,6 +2,10 @@ var sys = require('sys');
 var http = require('http')
 var NOT_FOUND = "Not Found\n";
 var routes = [];
+var middleware = {
+  request_processors: [],
+  headers:            []
+};
 
 function notFound(req, res, message) {
   sys.debug("notFound!");
@@ -11,6 +15,15 @@ function notFound(req, res, message) {
                       ]);
   res.sendBody(message);
   res.finish();
+}
+
+exports.addMiddleware = function (obj) {
+  if(obj['process_request']) {
+    middleware.request_processors.push(obj.process_request);
+  }
+  if(obj['headers']) {
+    middleware.request_processors.push(obj.headers);
+  }
 }
 
 function addRoute(method, pattern, handler, format) {
@@ -23,6 +36,35 @@ function addRoute(method, pattern, handler, format) {
 		route.format = format;
 	}
   routes.push(route);
+}
+
+/**
+ * map_urls will map a specially formatted array into a url structure.
+ *
+ * The array must be formatted as so:
+ 
+    urls = [PREFIX_STRING,
+      [UPPERCASE_METHOD_STRING, REGEX_MATCH_STRING, CONTROLLER_FUNCTION, FORMAT_IF_POST/PUT]
+    ];
+
+ */
+exports.map_urls = function (urls) {
+  var prefix = '';
+  for (var i in urls) {
+    if (i == 0) {
+      prefix = urls[i];
+      continue;
+    }
+
+    var url = urls[i];
+
+    var method    = url[0],
+        pattern   = prefix + url[1],
+        handler   = url[2],
+        format    = url[3];
+
+    addRoute(method, new RegExp(pattern), handler, format);
+  }
 }
 
 exports.get = function (pattern, handler) {
@@ -64,8 +106,7 @@ exports.resourceController = function (name, data, on_change) {
 				res.notFound();
 			}
 		},
-    create: function (req, res) {
-      var json = arguments[2];
+    create: function (req, res, json) {
       var id, url;
       if (!json) {
         res.notFound();
@@ -77,8 +118,7 @@ exports.resourceController = function (name, data, on_change) {
         res.simpleJson(201, {content: json, self: url}, [["Location", url]]);
       }
 		},
-    update: function (req, res, id) {
-      var json = arguments[3];
+    update: function (req, res, id, json) {
       if (!json) {
         res.notFound();
       } else {
@@ -99,37 +139,47 @@ var server = http.createServer(function (req, res) {
   var path = req.uri.path;
   sys.puts(req.method + " " + path);
 
-  res.simpleText = function (code, body, extra_headers) {
-    res.sendHeader(code, (extra_headers || []).concat(
-	                       [ ["Content-Type", "text/plain"],
+  res.simpleResponse = function (code, body, extra_headers, content_type) {
+    extra_headers = extra_headers || [];
+
+    // Add middleware headers
+    for (i in middleware.headers) {
+      mw_headers = middleware.headers[i]();
+      extra_headers.concat(mw_headers);
+    }
+
+    // Add simple headers
+    extra_headers.concat([ ["Content-Type", content_type],
                            ["Content-Length", body.length]
-                         ]));
+                         ]);
+
+    res.sendHeader(code, extra_headers);
     res.sendBody(body);
     res.finish();
+  }
+
+  res.simpleText = function (code, body, extra_headers) {
+    res.simpleResponse(code, body, extra_headers, "text/plain");
   };
 
   res.simpleHtml = function (code, body, extra_headers) {
-    res.sendHeader(code, (extra_headers || []).concat(
-	                       [ ["Content-Type", "text/html"],
-                           ["Content-Length", body.length]
-                         ]));
-    res.sendBody(body);
-    res.finish();
+    res.simpleResponse(code, body, extra_headers, "text/html");
   };
 
   res.simpleJson = function (code, json, extra_headers) {
 		var body = JSON.stringify(json);
-    res.sendHeader(code, (extra_headers || []).concat(
-	                       [ ["Content-Type", "application/json"],
-                           ["Content-Length", body.length]
-                         ]));
-    res.sendBody(body);
-    res.finish();
+    res.simpleResponse(code, body, extra_headers, "application/json");
   };
 
   res.notFound = function (message) {
 		notFound(req, res, message);
-	};
+  };
+
+  // Call middleware request_processors
+  var request_processors = middleware.request_processors;
+  for (i in request_processors) {
+    request_processors[i](req);
+  }
   
   for (var i = 0, l = routes.length; i < l; i += 1) {
     var route = routes[i];
