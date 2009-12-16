@@ -1,6 +1,16 @@
-var sys = require('sys');
-var http = require('http')
+if(!debug) {
+  var sys = require('sys');
+  sys.info = sys.puts;
+} else {
+  var sys = {};
+  sys.debug = debug;
+  sys.puts = info;
+  sys.info = info;
+}
+
+var http = require('http');
 var multipart = require('multipart');
+var posix = require('posix');
 
 var NOT_FOUND = "Not Found\n";
 var routes = [];
@@ -156,14 +166,15 @@ var server = http.createServer(function (req, res) {
   var path = req.uri.path;
   sys.puts(req.method + " " + path);
 
+  req.template_params = {};
+
   res.simpleResponse = function (code, body, extra_headers, content_type) {
-    // Get extra headers
-    extra_headers = extra_headers || {};
+    var headers = {};
 
     // Add middleware headers
     for (i in middleware.headers) {
       var mw_headers = middleware.headers[i](req);
-      process.mixin(extra_headers, mw_headers);
+      process.mixin(headers, mw_headers);
     }
 
     // Add simple headers
@@ -171,9 +182,10 @@ var server = http.createServer(function (req, res) {
     simple_headers["Content-Type"] = content_type;
     simple_headers["Content-Length"] = body.length;
 
-    process.mixin(extra_headers, simple_headers);
+    process.mixin(headers, simple_headers);
+    process.mixin(headers, extra_headers);
 
-    res.sendHeader(code, extra_headers);
+    res.sendHeader(code, headers);
     res.sendBody(body);
     res.finish();
   };
@@ -191,6 +203,10 @@ var server = http.createServer(function (req, res) {
     res.simpleResponse(code, body, extra_headers, "application/json");
   };
 
+  res.redirect = function (redirect_url) {
+    res.simpleResponse(302, "", {Location: redirect_url}, "text/html");
+  }
+
   res.notFound = function (message) {
 		notFound(req, res, message);
   };
@@ -198,9 +214,10 @@ var server = http.createServer(function (req, res) {
   // Call middleware request_processors
   var rp = middleware.request_processors;
   for (i in rp) {
-    req = rp[i](req);
+    req = rp[i](req,res);
+    if(req==null) return;
   }
-  
+
   for (var i = 0, l = routes.length; i < l; i += 1) {
     var route = routes[i];
 
@@ -215,7 +232,7 @@ var server = http.createServer(function (req, res) {
 
         if (route.format ==  'multipart') {
           multipart.parse(req).addCallback(function (obj) {
-            match.push(body);
+            match.push(obj);
             route.handler.apply(null, match);
           });
           return;
@@ -275,7 +292,7 @@ var staticHandler = function (req, res, filename) {
       return;
     }
 
-    process.fs.cat(filename, encoding).addCallback(function (data) {
+    posix.cat(filename, encoding).addCallback(function (data) {
       body = data;
       headers = [ [ "Content-Type"   , content_type ],
                   [ "Content-Length" , body.length ]
