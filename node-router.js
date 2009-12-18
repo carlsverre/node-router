@@ -231,8 +231,28 @@ var server = http.createServer(function (req, res) {
         match.unshift(req);
 
         if (route.format ==  'multipart') {
-          multipart.parse(req).addCallback(function (obj) {
-            match.push(obj);
+          var stream = new multipart.Stream(req);
+          var parts = {};
+
+          stream.addListener("part", function (part) {
+            var buffer = "";
+
+            part.addListener("body", function (chunk) {
+              buffer += chunk;
+            });
+
+            part.addListener("complete", function () {
+              if(part['filename']) {
+                if(!parts['files']) parts.files = {};
+                parts.files[part.filename] = buffer;
+              } else {
+                parts[part.name] = buffer;
+              }
+            });
+          });
+
+          stream.addListener('complete', function () {
+            match.push(parts);
             route.handler.apply(null, match);
           });
           return;
@@ -341,7 +361,7 @@ var mime = {
 		".cab"   : "application/vnd.ms-cab-compressed",
 		".cc"    : "text/x-c",
 		".chm"   : "application/vnd.ms-htmlhelp",
-		".class"   : "application/octet-stream",
+		".class"  : "application/octet-stream",
 		".com"   : "application/x-msdownload",
 		".conf"  : "text/plain",
 		".cpp"   : "text/x-c",
